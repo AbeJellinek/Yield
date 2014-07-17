@@ -1,7 +1,7 @@
 Yield
 =====
 
-An implementation of the generator pattern in Java.
+An implementation of the generator pattern in Java. Licensed under the MIT license.
 
 Example
 -------
