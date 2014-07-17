@@ -1,6 +1,8 @@
 package com.babblery.yield;
 
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -59,7 +61,7 @@ public class Generator<T> implements Iterable<T> {
             private Future<?> task = null;
 
             {
-                task = executor.submit((Runnable) () -> {
+                task = executor.submit(() -> {
                     try {
                         try {
                             consumer.accept(new Yield<>(queue));
@@ -121,6 +123,14 @@ public class Generator<T> implements Iterable<T> {
 
     public Stream<T> stream() {
         return StreamSupport.stream(spliterator(), false);
+    }
+
+    public List<T> toList() {
+        List<T> list = new ArrayList<>();
+        for (T t : this) {
+            list.add(t);
+        }
+        return list;
     }
 
     private static interface Message<T> {

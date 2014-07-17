@@ -6,8 +6,7 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.Executors;
 import java.util.stream.Stream;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.*;
 
 public class GeneratorTests {
     @Test
@@ -74,5 +73,16 @@ public class GeneratorTests {
         });
         Iterator<String> iter = generator.iterator();
         iter.next();
+    }
+
+    @Test
+    public void generatorShouldConvertToList() {
+        Generator<String> generator = Generator.on(yield -> {
+            yield.value("one");
+            yield.value("two");
+            yield.value("three");
+        });
+
+        assertArrayEquals(new String[]{"one", "two", "three"}, generator.toList().toArray());
     }
 }
