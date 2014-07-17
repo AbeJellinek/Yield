@@ -21,4 +21,24 @@ public class GeneratorTests {
         assertEquals(3, (int) ints.next());
         assertFalse(ints.hasNext());
     }
+
+    @Test
+    public void generatorShouldBeIterable() {
+        Generator<String> generator = Generator.on(yield -> yield.value("value"));
+
+        for (String s : generator) {
+            assertEquals("value", s);
+        }
+    }
+
+    @Test
+    public void generatorShouldNotInfinitelyLoop() {
+        Generator<String> generator = Generator.on(yield -> {
+            while (true) {
+                yield.value("value");
+            }
+        });
+
+        generator.stream().limit(10).forEach(s -> assertEquals("value", s));
+    }
 }

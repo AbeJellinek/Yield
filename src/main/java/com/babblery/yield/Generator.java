@@ -2,10 +2,13 @@ package com.babblery.yield;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.SynchronousQueue;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * A generator that produces values asynchronously.
@@ -14,9 +17,9 @@ import java.util.function.Consumer;
  */
 public class Generator<T> implements Iterable<T> {
     private Consumer<Yielder<T>> consumer;
-    private Executor executor;
+    private ExecutorService executor;
 
-    public Generator(Consumer<Yielder<T>> consumer, Executor executor) {
+    public Generator(Consumer<Yielder<T>> consumer, ExecutorService executor) {
         this.consumer = consumer;
         this.executor = executor;
     }
@@ -44,7 +47,7 @@ public class Generator<T> implements Iterable<T> {
      * @param <T>      The value type.
      * @return The iterable generator.
      */
-    public static <T> Generator<T> on(Consumer<Yielder<T>> consumer, Executor executor) {
+    public static <T> Generator<T> on(Consumer<Yielder<T>> consumer, ExecutorService executor) {
         return new Generator<>(consumer, executor);
     }
 
@@ -54,13 +57,13 @@ public class Generator<T> implements Iterable<T> {
             private boolean run = false;
             private SynchronousQueue<T> queue = new SynchronousQueue<>();
             private T result = null;
-            private boolean done = false;
+            private Future<?> task = null;
 
             private void start() {
-                if (!run && !done) {
-                    executor.execute(() -> {
+                if (!run && task == null) {
+                    task = executor.submit(() -> {
                         consumer.accept(new Yielder<>(queue));
-                        done = true;
+                        task = null;
                     });
                     run = true;
                 }
@@ -68,11 +71,12 @@ public class Generator<T> implements Iterable<T> {
 
             @Override
             public boolean hasNext() {
-                if (done && result == null) {
+                start();
+
+                if (task == null && result == null) {
                     return false;
                 }
 
-                start();
                 try {
                     return (result = queue.take()) != null;
                 } catch (InterruptedException e) {
@@ -83,11 +87,12 @@ public class Generator<T> implements Iterable<T> {
 
             @Override
             public T next() {
-                if (done && result == null) {
+                start();
+
+                if (task == null && result == null) {
                     throw new NoSuchElementException();
                 }
 
-                start();
                 if (result == null) {
                     try {
                         return queue.take();
@@ -101,7 +106,19 @@ public class Generator<T> implements Iterable<T> {
                     return result;
                 }
             }
+
+            @Override
+            protected void finalize() throws Throwable {
+                super.finalize();
+                if (task != null) {
+                    task.cancel(true);
+                }
+            }
         };
+    }
+
+    public Stream<T> stream() {
+        return StreamSupport.stream(spliterator(), false);
     }
 
     public static class Yielder<T> {
