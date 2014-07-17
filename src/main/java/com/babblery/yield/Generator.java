@@ -16,15 +16,15 @@ import java.util.stream.StreamSupport;
  * @param <T> The type of the values.
  */
 public class Generator<T> implements Iterable<T> {
-    private Consumer<Yielder<T>> consumer;
+    private Consumer<Yield<T>> consumer;
     private ExecutorService executor;
 
-    public Generator(Consumer<Yielder<T>> consumer, ExecutorService executor) {
+    public Generator(Consumer<Yield<T>> consumer, ExecutorService executor) {
         this.consumer = consumer;
         this.executor = executor;
     }
 
-    public Generator(Consumer<Yielder<T>> consumer) {
+    public Generator(Consumer<Yield<T>> consumer) {
         this(consumer, Executors.newSingleThreadExecutor());
     }
 
@@ -35,7 +35,7 @@ public class Generator<T> implements Iterable<T> {
      * @param <T>      The value type.
      * @return The iterable generator.
      */
-    public static <T> Generator<T> on(Consumer<Yielder<T>> consumer) {
+    public static <T> Generator<T> on(Consumer<Yield<T>> consumer) {
         return new Generator<>(consumer);
     }
 
@@ -47,38 +47,46 @@ public class Generator<T> implements Iterable<T> {
      * @param <T>      The value type.
      * @return The iterable generator.
      */
-    public static <T> Generator<T> on(Consumer<Yielder<T>> consumer, ExecutorService executor) {
+    public static <T> Generator<T> on(Consumer<Yield<T>> consumer, ExecutorService executor) {
         return new Generator<>(consumer, executor);
     }
 
     @Override
     public Iterator<T> iterator() {
         return new Iterator<T>() {
-            private boolean run = false;
-            private SynchronousQueue<T> queue = new SynchronousQueue<>();
-            private T result = null;
+            private SynchronousQueue<Message<T>> queue = new SynchronousQueue<>();
+            private Message<T> result = null;
             private Future<?> task = null;
 
-            private void start() {
-                if (!run && task == null) {
-                    task = executor.submit(() -> {
-                        consumer.accept(new Yielder<>(queue));
-                        task = null;
-                    });
-                    run = true;
+            {
+                task = executor.submit((Runnable) () -> {
+                    try {
+                        try {
+                            consumer.accept(new Yield<>(queue));
+                        } catch (BreakException ignored) {
+                        }
+
+                        queue.put(new End<>());
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                });
+            }
+
+            private Message<T> getResult() throws InterruptedException {
+                if (result != null) {
+                    return result;
+                } else if (task == null || task.isDone()) {
+                    return new End<>();
+                } else {
+                    return result = queue.take();
                 }
             }
 
             @Override
             public boolean hasNext() {
-                start();
-
-                if (task == null && result == null) {
-                    return false;
-                }
-
                 try {
-                    return (result = queue.take()) != null;
+                    return getResult() instanceof Value;
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                     return false;
@@ -87,23 +95,17 @@ public class Generator<T> implements Iterable<T> {
 
             @Override
             public T next() {
-                start();
-
-                if (task == null && result == null) {
+                if (!hasNext()) {
                     throw new NoSuchElementException();
                 }
 
-                if (result == null) {
-                    try {
-                        return queue.take();
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                        return null;
-                    }
-                } else {
-                    T result = this.result;
-                    this.result = null;
-                    return result;
+                try {
+                    Message<T> newResult = getResult();
+                    result = null;
+                    return newResult.getValue();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                    return null;
                 }
             }
 
@@ -121,24 +123,55 @@ public class Generator<T> implements Iterable<T> {
         return StreamSupport.stream(spliterator(), false);
     }
 
-    public static class Yielder<T> {
-        private SynchronousQueue<T> queue;
+    private static interface Message<T> {
+        public T getValue();
+    }
 
-        public Yielder(SynchronousQueue<T> queue) {
+    private static class Value<T> implements Message<T> {
+        private T value;
+
+        private Value(T value) {
+            this.value = value;
+        }
+
+        @Override
+        public T getValue() {
+            return value;
+        }
+    }
+
+    private static class End<T> implements Message<T> {
+        @Override
+        public T getValue() {
+            return null;
+        }
+    }
+
+    public static class Yield<T> {
+        private SynchronousQueue<Message<T>> queue;
+
+        public Yield(SynchronousQueue<Message<T>> queue) {
             this.queue = queue;
         }
 
         /**
          * Yield a value.
          *
-         * @param value The value to yield. Must not be null.
+         * @param value The value to yield.
          */
         public void value(T value) {
             try {
-                queue.put(value);
+                queue.put(new Value<>(value));
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
+        }
+
+        /**
+         * Stop generation immediately.
+         */
+        public void end() {
+            throw new BreakException();
         }
     }
 }

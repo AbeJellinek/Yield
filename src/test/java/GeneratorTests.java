@@ -2,6 +2,9 @@ import com.babblery.yield.Generator;
 import org.junit.Test;
 
 import java.util.Iterator;
+import java.util.NoSuchElementException;
+import java.util.concurrent.Executors;
+import java.util.stream.Stream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -13,6 +16,9 @@ public class GeneratorTests {
             yield.value(1);
             yield.value(2);
             yield.value(3);
+
+            yield.end();
+            yield.value(5);
         });
 
         Iterator<Integer> ints = generator.iterator();
@@ -39,6 +45,34 @@ public class GeneratorTests {
             }
         });
 
-        generator.stream().limit(10).forEach(s -> assertEquals("value", s));
+        Stream<String> stream = generator.stream().limit(10);
+        Iterator<String> iter = stream.iterator();
+        int i = 0;
+
+        while (iter.hasNext()) {
+            String next = iter.next();
+            assertEquals("value", next);
+            i++;
+        }
+
+        assertEquals(10, i);
+    }
+
+    @Test
+    public void generatorShouldAcceptExecutor() {
+        Generator<String> generator = Generator.on(yield -> yield.value("value"), Executors.newCachedThreadPool());
+
+        for (String s : generator) {
+            assertEquals("value", s);
+        }
+    }
+
+    @Test(expected = NoSuchElementException.class)
+    public void generatorShouldThrowIfEmpty() {
+        Generator<String> generator = Generator.on(yield -> {
+            // no-op
+        });
+        Iterator<String> iter = generator.iterator();
+        iter.next();
     }
 }
