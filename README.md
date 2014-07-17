@@ -6,7 +6,7 @@ An implementation of the generator pattern in Java.
 Example
 -------
 
-```ava
+```java
 Generator<Integer> generator = Generator.on(yield -> {
     yield.value(1);
     yield.value(2);
